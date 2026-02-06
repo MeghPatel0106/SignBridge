@@ -197,5 +197,22 @@ def get_word():
         'sentence': stored_sentence
     })
 
+@app.route('/clear_sentence', methods=['POST'])
+def clear_sentence():
+    global stored_sentence, is_sentence_appended, last_valid_prediction
+    stored_sentence = ""
+    is_sentence_appended = False
+    last_valid_prediction = None
+    return jsonify({'status': 'cleared', 'sentence': stored_sentence})
+
+@app.route('/backspace_sentence', methods=['POST'])
+def backspace_sentence():
+    global stored_sentence, is_sentence_appended
+    stored_sentence = stored_sentence[:-1]
+    # If we backspace, we might want to allow immediate re-entry of the same char if needed,
+    # but strictly 'is_sentence_appended' tracks the *current* gesture hold.
+    # It shouldn't block re-typing if the user really wants.
+    return jsonify({'status': 'backspaced', 'sentence': stored_sentence})
+
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

@@ -57,6 +57,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Clear and Backspace Handlers
+    const clearBtn = document.getElementById('clearBtn');
+    const backspaceBtn = document.getElementById('backspaceBtn');
+
+    if (clearBtn) {
+        clearBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/clear_sentence', { method: 'POST' });
+                const data = await response.json();
+                document.getElementById('storedSentence').value = data.sentence;
+            } catch (err) {
+                console.error("Error clearing sentence:", err);
+            }
+        });
+    }
+
+    if (backspaceBtn) {
+        backspaceBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/backspace_sentence', { method: 'POST' });
+                const data = await response.json();
+                document.getElementById('storedSentence').value = data.sentence;
+            } catch (err) {
+                console.error("Error backspacing:", err);
+            }
+        });
+    }
+
     // Prototype Gesture Detection (Tap on Video) - Optional/Removed as we have real detection
     webcamVideo.addEventListener('click', () => {
         // Optional: could manually trigger a fetch
