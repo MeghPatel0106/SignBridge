@@ -1,0 +1,201 @@
+from flask import Flask, render_template, Response, jsonify, send_from_directory
+import cv2
+import mediapipe as mp
+import numpy as np
+import pandas as pd
+import joblib
+import time
+from sklearn.neighbors import KNeighborsClassifier
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+import os
+
+app = Flask(__name__, static_folder=os.getcwd(), static_url_path='') # Initialize Flask with current dir as static
+
+# --- Global Variables for Prediction ---
+model = None
+scaler = None
+current_prediction = ""
+landmarker = None
+
+# Sentence Building Globals
+stored_sentence = ""
+last_valid_prediction = None
+stability_start_time = 0.0
+is_sentence_appended = False
+
+# --- Initialization ---
+def load_resources():
+    global model, landmarker
+    print("Loading model...")
+    try:
+        model = joblib.load('isl_model.pkl')
+        print("Model loaded.")
+    except Exception as e:
+        print(f"Error loading model: {e}")
+        return
+
+    # Initialize MediaPipe Hands
+    BaseOptions = mp.tasks.BaseOptions
+    HandLandmarker = mp.tasks.vision.HandLandmarker
+    HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
+    VisionRunningMode = mp.tasks.vision.RunningMode
+
+    options = HandLandmarkerOptions(
+        base_options=BaseOptions(model_asset_path='hand_landmarker.task'),
+        running_mode=VisionRunningMode.VIDEO,
+        num_hands=2
+    )
+    
+    # Create the landmarker (we'll keep it open)
+    landmarker = HandLandmarker.create_from_options(options)
+    print("MediaPipe Landmarker initialized.")
+
+load_resources()
+
+def generate_frames():
+    global current_prediction, stored_sentence, last_valid_prediction, stability_start_time, is_sentence_appended, scaler   
+    cap = cv2.VideoCapture(0)
+    
+    if not cap.isOpened():
+        print("Error: Could not open webcam.")
+        return
+
+    while True:
+        success, frame = cap.read()
+        if not success:
+            break
+
+        # Flip and convert
+        frame = cv2.flip(frame, 1)
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+
+        # Detect
+        timestamp_ms = int(time.time() * 1000)
+        detection_result = landmarker.detect_for_video(mp_image, timestamp_ms)
+
+        # Process result
+        best_prediction = None
+        max_confidence = -1.0
+
+        if detection_result.hand_landmarks:
+            # Hand detected
+            # Reset hand drop counter (concept removed, basically handled by stable reset)
+            
+            for hand_landmarks in detection_result.hand_landmarks:
+                # Extract features
+                features = []
+                for landmark in hand_landmarks:
+                    features.extend([landmark.x, landmark.y, landmark.z])
+                
+                # Predict probabilities
+                if model:
+                    try:
+                        # Normalize if scaler exists
+                        if scaler:
+                            features_scaled = scaler.transform([features])
+                            proba = model.predict_proba(features_scaled)[0]
+                        else:
+                            proba = model.predict_proba([features])[0]
+                            
+                        confidence = np.max(proba)
+                        predicted_idx = np.argmax(proba)
+                        prediction = model.classes_[predicted_idx]
+                        
+                        # Keep the one with highest confidence
+                        if confidence > max_confidence:
+                            max_confidence = confidence
+                            best_prediction = prediction
+                    except Exception as e:
+                        print(f"Prediction Error: {e}")
+                
+                # Draw landmarks (Red dots)
+                for landmark in hand_landmarks:
+                    h, w, _ = frame.shape
+                    cx, cy = int(landmark.x * w), int(landmark.y * h)
+                    cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
+
+                # Manually define hand connections (bones)
+                HAND_CONNECTIONS = [
+                    (0, 1), (1, 2), (2, 3), (3, 4),   # Thumb
+                    (0, 5), (5, 6), (6, 7), (7, 8),   # Index
+                    (0, 9), (9, 10), (10, 11), (11, 12), # Middle
+                    (0, 13), (13, 14), (14, 15), (15, 16), # Ring
+                    (0, 17), (17, 18), (18, 19), (19, 20)  # Pinky
+                ]
+
+                # Draw connections using OpenCV
+                for connection in HAND_CONNECTIONS:
+                    start_idx = connection[0]
+                    end_idx = connection[1]
+                    
+                    start_point = hand_landmarks[start_idx]
+                    end_point = hand_landmarks[end_idx]
+                    
+                    # Convert normalized coordinates to pixel coordinates
+                    h, w, _ = frame.shape
+                    start_x, start_y = int(start_point.x * w), int(start_point.y * h)
+                    end_x, end_y = int(end_point.x * w), int(end_point.y * h)
+                    
+                    # Draw green line with thickness 2
+                    cv2.line(frame, (start_x, start_y), (end_x, end_y), (0, 255, 0), 2)
+            
+            # Update prediction state
+            if best_prediction:
+                current_prediction = best_prediction
+                
+                # Dwell Time Logic
+                if best_prediction == last_valid_prediction:
+                    # Same prediction as before, check duration
+                    duration = time.time() - stability_start_time
+                    if duration > 1 and not is_sentence_appended:
+                        stored_sentence += best_prediction
+                        print(f"Sentence updated: {stored_sentence}")
+                        is_sentence_appended = True
+                else:
+                    # New prediction, reset timer
+                    last_valid_prediction = best_prediction
+                    stability_start_time = time.time()
+                    is_sentence_appended = False
+                
+                # Display
+                display_text = f"Prediction: {best_prediction}"
+                cv2.putText(frame, display_text, (50, 50), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+                
+                # Optional: Show progress bar or indicator? 
+                # For now just simple text update.
+        
+        else:
+            # No hand detected
+            last_valid_prediction = None
+            is_sentence_appended = False
+            current_prediction = "" # Clear display if no hand
+
+        # Encode frame
+        ret, buffer = cv2.imencode('.jpg', frame)
+        frame_bytes = buffer.tobytes()
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+
+    cap.release()
+
+@app.route('/')
+def index():
+    return app.send_static_file('index.html')
+
+@app.route('/video_feed')
+def video_feed():
+    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/get_word')
+def get_word():
+    # Return both current word and stored sentence
+    return jsonify({
+        'word': current_prediction,
+        'sentence': stored_sentence
+    })
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)

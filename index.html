@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,6 +11,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
+
 <body>
 
     <header class="app-header">
@@ -20,24 +22,32 @@
     </header>
 
     <main class="main-content container">
-        
+
         <!-- Left Section: ISL to Speech -->
         <section class="panel left-panel">
             <div class="panel-header">
                 <h2>ISL → Speech</h2>
             </div>
-            
+
             <div class="video-placeholder" id="webcam-placeholder">
                 <div class="placeholder-content">
                     <span class="icon">📷</span>
                     <p>Webcam Feed</p>
                 </div>
-                <video id="webcam-video" autoplay playsinline muted class="hidden"></video>
+                <!-- Flask Video Stream -->
+                <img id="webcam-video" src="" width="100%" class="hidden" alt="Webcam Feed">
             </div>
 
             <div class="output-area">
-                <label for="detected-text">Detected Word:</label>
-                <textarea id="detected-text" readonly placeholder="Waiting for interaction..."></textarea>
+                <label for="detectedWord">Detected Word:</label>
+                <input type="text" id="detectedWord" readonly placeholder="Waiting for interaction..."
+                    style="width: 100%; padding: 10px; margin-top: 5px; font-size: 1.2rem;">
+            </div>
+
+            <div class="output-area" style="margin-top: 15px;">
+                <label for="storedSentence">Formed Sentence:</label>
+                <textarea id="storedSentence" readonly placeholder="Sentence builds here..."
+                    style="width: 100%; height: 80px; padding: 10px; margin-top: 5px; font-size: 1.1rem; border-radius: 8px; border: 1px solid #ccc;"></textarea>
             </div>
 
             <div class="button-group">
@@ -82,4 +92,5 @@
 
     <script src="script.js"></script>
 </body>
+
 </html>
