@@ -1,5 +1,8 @@
 import cv2
 import mediapipe as mp
+import time
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
 
 def main():
     # Initialize MediaPipe Hands (new way for v0.10.30+)
@@ -11,7 +14,7 @@ def main():
     # Create hand landmarker
     options = HandLandmarkerOptions(
         base_options=BaseOptions(model_asset_path='hand_landmarker.task'),
-        running_mode=VisionRunningMode.IMAGE,
+        running_mode=VisionRunningMode.VIDEO,
         num_hands=2
     )
     
@@ -36,7 +39,9 @@ def main():
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
             
             # Detect hands
-            detection_result = landmarker.detect(mp_image)
+            # Timestamp (ms) is required for VIDEO mode
+            timestamp_ms = int(time.time() * 1000)
+            detection_result = landmarker.detect_for_video(mp_image, timestamp_ms)
             
             # Draw landmarks
             if detection_result.hand_landmarks:
@@ -45,6 +50,35 @@ def main():
                         h, w, _ = frame.shape
                         cx, cy = int(landmark.x * w), int(landmark.y * h)
                         cv2.circle(frame, (cx, cy), 5, (0, 255, 0), -1)
+                        # Requested print
+                        print(f"{idx}: {landmark.x:.3f}, {landmark.y:.3f}, {landmark.z:.3f}")
+
+                    # Manually define hand connections (bones)
+                    HAND_CONNECTIONS = [
+                        (0, 1), (1, 2), (2, 3), (3, 4),   # Thumb
+                        (0, 5), (5, 6), (6, 7), (7, 8),   # Index
+                        (0, 9), (9, 10), (10, 11), (11, 12), # Middle
+                        (0, 13), (13, 14), (14, 15), (15, 16), # Ring
+                        (0, 17), (17, 18), (18, 19), (19, 20)  # Pinky
+                    ]
+
+                    # Draw connections using OpenCV
+                    for connection in HAND_CONNECTIONS:
+                        start_idx = connection[0]
+                        end_idx = connection[1]
+                        
+                        start_point = hand_landmarks[start_idx]
+                        end_point = hand_landmarks[end_idx]
+                        
+                        # Convert normalized coordinates to pixel coordinates
+                        h, w, _ = frame.shape
+                        start_x, start_y = int(start_point.x * w), int(start_point.y * h)
+                        end_x, end_y = int(end_point.x * w), int(end_point.y * h)
+                        
+                        # Draw green line with thickness 2
+                        cv2.line(frame, (start_x, start_y), (end_x, end_y), (0, 255, 0), 2)
+                    
+
             
             cv2.imshow('SignBridge Hand Tracker', frame)
             
